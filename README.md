@@ -10,23 +10,16 @@ habituales que la gente modifica a mano en el Editor del Registro, sin tocar
 > Creada por **reptOSystem** · Canal de personalización y optimización de Windows: <https://www.youtube.com/@reptOSystem>
 > (También dentro de la app, en **ℹ️ Acerca de REPTOSX**.)
 
-## Cómo abrirlo
+## Descarga
 
-- **Doble clic en `REPTOSX.bat`** — modo normal (ajustes de usuario).
-- **Doble clic en `REPTOSX-Admin.bat`** — pide permiso de administrador para
-  poder aplicar también los ajustes del sistema (los del candado 🔒).
+1. Ve a la sección **[Releases](https://github.com/ReptOSystem/REPTOSX/releases)** de este repositorio.
+2. Descarga `REPTOSX.exe` de la última versión.
+3. Ábrelo con doble clic. No necesitas instalar Python ni nada más.
 
-También puedes ejecutarlo desde una terminal:
-
-```powershell
-python main.py
-```
-
-## Requisitos
-
-- Windows 11
-- Python 3.10+
-- `customtkinter` (ya instalado). Si falta: `pip install customtkinter`
+Windows pedirá permiso de administrador (UAC) al abrirlo: es necesario para
+poder aplicar los ajustes marcados con 🔒. Si SmartScreen avisa de "editor
+desconocido", es normal en aplicaciones nuevas sin firma digital — puedes
+darle a "Más información → Ejecutar de todas formas".
 
 ## Presets (un clic)
 
@@ -120,31 +113,11 @@ con la API de Windows y el Registro — nada se envía a ningún sitio.
 - Algunos cambios visuales (barra de tareas, Explorador) necesitan
   **reiniciar el Explorador** — usa el botón "🔄 Reiniciar Explorador".
 
-## Estructura del código
+## Idioma
 
-| Archivo | Descripción |
-|---------|-------------|
-| `registry_utils.py` | Lectura/escritura/borrado seguro del Registro (vista de 64 bits) |
-| `tweaks_data.py` | Catálogo de ajustes: claves, valores y descripciones |
-| `main.py` | Interfaz gráfica (CustomTkinter) |
-
-Para **añadir un ajuste nuevo** solo tienes que agregar un objeto `Tweak` a la
-lista `TWEAKS` en `tweaks_data.py`; la interfaz lo mostrará automáticamente.
-
-## Generar un .exe independiente
-
-Para distribuir REPTOSX sin que el usuario tenga Python:
-
-- **Doble clic en `construir_exe.bat`** → genera `dist\REPTOSX.exe`, un único
-  ejecutable que incluye todo. Al abrirlo, Windows pedirá permisos de
-  administrador (así funcionan también los ajustes del sistema).
-
-El script ya configura `--collect-all customtkinter` (recursos de la interfaz),
-`--onefile`, `--windowed` y `--uac-admin`. Si colocas un `REPTOSX.ico` en la
-carpeta, lo usará como icono del ejecutable automáticamente.
-
-> Nota: SmartScreen puede avisar de "editor desconocido" porque el .exe no está
-> firmado digitalmente; es normal en ejecutables de PyInstaller sin firma.
+REPTOSX está disponible en **español** (por defecto) e **inglés**. Puedes
+cambiarlo en cualquier momento desde el desplegable **IDIOMA**, en la parte
+inferior de la barra lateral.
 
 ## ⚠️ Aviso
 
