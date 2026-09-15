@@ -1,126 +1,109 @@
-# REPTOSX 🛠️ — Herramienta para Windows 11
+# REPTOSX
 
-Personalizador y optimizador **todo-en-uno** del Registro de Windows 11 con
-interfaz gráfica moderna. Activa o desactiva con un interruptor los ajustes más
-habituales que la gente modifica a mano en el Editor del Registro, sin tocar
-`regedit`.
+Herramienta de personalización y optimización para Windows 11. Permite activar
+o desactivar, desde una interfaz gráfica, los ajustes del Registro que
+normalmente se modifican a mano con `regedit`.
 
-![tema oscuro](https://img.shields.io/badge/UI-CustomTkinter-2563eb) ![Windows](https://img.shields.io/badge/Windows-11-blue) ![YouTube](https://img.shields.io/badge/YouTube-@reptOSystem-cc0000)
+![Windows](https://img.shields.io/badge/Windows-11-blue) ![UI](https://img.shields.io/badge/UI-CustomTkinter-2563eb)
 
-> Creada por **reptOSystem** · Canal de personalización y optimización de Windows: <https://www.youtube.com/@reptOSystem>
-> (También dentro de la app, en **ℹ️ Acerca de REPTOSX**.)
+Creada por reptOSystem. Canal de personalización y optimización de Windows:
+<https://www.youtube.com/@reptOSystem>
 
 ## Descarga
 
-1. Ve a la sección **[Releases](https://github.com/ReptOSystem/REPTOSX/releases)** de este repositorio.
+1. Ve a la sección [Releases](https://github.com/ReptOSystem/REPTOSX/releases) de este repositorio.
 2. Descarga `REPTOSX.exe` de la última versión.
-3. Ábrelo con doble clic. No necesitas instalar Python ni nada más.
+3. Ábrelo con doble clic.
 
-Windows pedirá permiso de administrador (UAC) al abrirlo: es necesario para
-poder aplicar los ajustes marcados con 🔒. Si SmartScreen avisa de "editor
-desconocido", es normal en aplicaciones nuevas sin firma digital — puedes
-darle a "Más información → Ejecutar de todas formas".
+No hace falta instalar Python ni ninguna otra dependencia. Al abrirlo, Windows
+pedirá permiso de administrador (UAC), necesario para aplicar los ajustes
+marcados con el icono de candado. Si SmartScreen avisa de "editor
+desconocido", es el comportamiento normal para una aplicación nueva sin firma
+digital; puede continuarse desde "Más información → Ejecutar de todas formas".
 
-## Presets (un clic)
+## Presets
 
-En la sección **⭐ Presets** (arriba en la barra lateral) puedes aplicar varios
-ajustes a la vez:
+La sección Presets permite aplicar varios ajustes a la vez con un clic:
 
-- **🎮 Gaming** — prioridad a primer plano, GPU por hardware, red sin latencia extra (Nagle, QoS), sin telemetría ni tareas de fondo que roben recursos.
-- **🔒 Privacidad máxima** — telemetría, sugerencias, Windows Recall (IA), búsqueda web, DiagTrack y rastreo de escritura al mínimo.
-- **🌙 Escritorio minimalista** — modo oscuro total y limpieza visual real: sin Widgets ni buscador en la barra, Explorador y menú Inicio sin sugerencias, escritorio y bloqueo limpios.
-- **🧹 Limpio y rápido** — quita bloatware y sugerencias y acelera el sistema.
+- **Gaming**: prioridad de la aplicación en primer plano, aceleración de GPU
+  por hardware, ajustes de red para reducir latencia y desactivación de
+  telemetría y tareas de fondo.
+- **Privacidad máxima**: reduce telemetría, sugerencias, Windows Recall,
+  búsqueda web y el seguimiento de escritura al mínimo permitido.
+- **Escritorio minimalista**: modo oscuro completo y una interfaz más
+  despejada, sin widgets, sugerencias ni accesos innecesarios.
+- **Limpio y rápido**: elimina bloatware y sugerencias sin tocar la
+  privacidad en profundidad.
 
-Antes de aplicar un preset (o restaurar una categoría/todo) la app **siempre
-pide confirmación**, mostrando cuántos ajustes cambiarán de verdad y avisando
-si alguno reduce la seguridad de Windows.
+Antes de aplicar un preset, o de restaurar una categoría entera, la aplicación
+muestra cuántos ajustes van a cambiar y avisa si alguno de ellos reduce la
+seguridad del sistema. Cada categoría tiene también un botón para restaurar
+únicamente sus ajustes a los valores predeterminados.
 
-Además, en cada categoría hay un botón **↩ Restaurar categoría**, un filtro
-**Solo activados** con contador, y en Presets un **↩ Restaurar TODO a los valores
-predeterminados**. Todo es reversible.
+## Exportar e importar configuración
 
-## Exportar / importar tu configuración
+Desde la sección Presets se puede exportar la configuración activa a un
+archivo `.json`, y volver a importarla más adelante (por ejemplo tras
+reinstalar Windows, o para compartir una configuración recomendada).
 
-Desde la sección **⭐ Presets** puedes:
+## Información del equipo
 
-- **Exportar mi configuración** — guarda en un `.json` qué ajustes tienes
-  activados ahora mismo. Útil como copia de seguridad o para reinstalar
-  Windows sin tener que volver a configurar REPTOSX ajuste a ajuste.
-- **Importar configuración** — carga un `.json` exportado antes (el tuyo o
-  el de otra persona) y aplícalo con un clic. Ideal para compartir tu
-  configuración recomendada con tu comunidad.
+La sección Mi equipo muestra el procesador, la memoria RAM en uso, la tarjeta
+gráfica con su VRAM, el espacio y tipo de los discos (SSD o HDD) y la versión
+de Windows instalada. Toda esta información se lee localmente; no se envía a
+ningún sitio.
 
-## Mi equipo
+## Otras funciones
 
-Sección **🖥️ Mi equipo** en la barra lateral: muestra procesador, memoria RAM
-(con barra de uso), tarjeta(s) gráfica(s) con su VRAM, discos (espacio libre
-y tipo SSD/HDD) y la versión/build exacta de Windows. Todo se lee localmente
-con la API de Windows y el Registro — nada se envía a ningún sitio.
+- Tres temas visuales: Oscuro, Claro y Cherry Blossom, con la interfaz
+  traducida al español e inglés desde el propio desplegable de idioma.
+- Ventana de tamaño proporcional a la pantalla, para verse correctamente
+  tanto en portátiles pequeños como en monitores grandes.
+- Creación de un punto de restauración del sistema con un clic.
+- Búsqueda de ajustes por nombre o descripción.
 
-## Funciones de la app
+## Catálogo de ajustes
 
-- **3 temas** (Oscuro, Claro y 🌸 Cherry Blossom) con iconos vectoriales nativos
-  de Windows 11. La app **recuerda tu tema** entre sesiones.
-- **Ventana de tamaño fijo y proporcional** a tu pantalla (no absoluto en
-  píxeles): se ve bien tanto en portátiles pequeños como en monitores 4K, y
-  siempre cabe toda la barra lateral sin necesidad de scroll.
-- **Punto de restauración del sistema con un clic** desde la barra lateral
-  (requiere administrador).
-- Aviso de responsabilidad al abrir, con opción de **"No volver a mostrar"**.
-- Búsqueda global y barra de título nativa tintada con el color del tema.
+El catálogo incluye 83 ajustes, priorizando aquellos que no están disponibles
+fácilmente desde la propia Configuración de Windows.
 
-## Qué incluye (83 ajustes en 2 grupos)
-
-> Catálogo **curado**: se prioriza lo que **no se puede hacer fácilmente desde
-> Configuración de Windows** (ajustes de registro, políticas y servicios). Cada
-> ajuste reversible ha sido verificado con una prueba de escritura/lectura.
-
-### 🎨 Personalización
+### Personalización
 
 | Categoría | Ejemplos |
-|-----------|----------|
-| Apariencia | Modo oscuro apps/sistema, calidad máxima del fondo de pantalla, desactivar Aero Shake |
-| Barra de tareas | Alinear a la izquierda, desactivar Widgets*, ocultar Vista de tareas/búsqueda, **nunca combinar botones**, **mostrar todos los iconos de la bandeja**, "Finalizar tarea" |
-| Menú Inicio | Quitar Bing, más anclajes, no mostrar recientes, desactivar Copilot, notificaciones de cuenta |
-| Explorador | Mostrar extensiones/ocultos, **menú contextual clásico**, ocultar OneDrive/Galería, **"Abrir CMD/PowerShell aquí"**, abrir en "Este equipo", **quitar "- Acceso directo"** |
-| Escritorio e iconos | Mostrar/ocultar Este equipo, Usuario, Red, Panel de control, Papelera y el icono de Spotlight |
-| Pantalla de bloqueo | Quitar curiosidades/anuncios, desactivar pantalla de bloqueo*, quitar el desenfoque del login* |
+|---|---|
+| Apariencia | Modo oscuro en apps/sistema, calidad máxima del fondo de pantalla, desactivar Aero Shake |
+| Barra de tareas | Alinear a la izquierda, ocultar Vista de tareas o búsqueda, no combinar botones, mostrar todos los iconos de la bandeja |
+| Menú Inicio | Quitar Bing, más anclajes, no mostrar recientes, desactivar Copilot |
+| Explorador | Mostrar extensiones y ocultos, menú contextual clásico, abrir CMD/PowerShell en la carpeta actual |
+| Escritorio e iconos | Mostrar u ocultar Este equipo, Red, Panel de control y Papelera |
+| Pantalla de bloqueo | Quitar anuncios y curiosidades, desactivar la pantalla de bloqueo* |
 
-### ⚙️ Optimización
+### Optimización
 
 | Categoría | Ejemplos |
-|-----------|----------|
-| Rendimiento | Plan de alto rendimiento*, efectos visuales a rendimiento, sin animaciones, menús instantáneos, sin aceleración del ratón, Power Throttling*, **apps en segundo plano** |
-| Arranque y apagado | Desactivar inicio rápido*, hibernación*, sonido de arranque*, animación de bienvenida*, mensajes detallados* |
-| Privacidad y telemetría | Contenido sugerido, telemetría*, **Windows Recall (IA)**, búsqueda web*, **servicio DiagTrack***, apps promocionadas*, Spotlight* |
-| Red | Liberar ancho de banda QoS*, desactivar descargas P2P*, NetworkThrottlingIndex*, **desactivar el algoritmo de Nagle*** |
-| Juegos | Game DVR, HAGS*, prioridad del sistema*, optimizaciones de pantalla completa, aviso de teclas especiales, **⚠ desactivar VBS/HVCI*** |
-| Sistema | Rutas largas*, NTFS sin "último acceso"*, servicio SysMain*, almacenamiento reservado*, **⚠ reducir UAC***, **⚠ SmartScreen*** |
+|---|---|
+| Rendimiento | Plan de alto rendimiento*, sin animaciones, sin aceleración del ratón |
+| Arranque y apagado | Inicio rápido*, hibernación*, sonido y animación de bienvenida* |
+| Privacidad y telemetría | Telemetría*, Windows Recall, búsqueda web*, servicio DiagTrack* |
+| Red | Ancho de banda reservado (QoS)*, descargas P2P*, algoritmo de Nagle* |
+| Juegos | Game DVR, aceleración de GPU por hardware*, prioridad del sistema* |
+| Sistema | Rutas largas*, servicio SysMain*, almacenamiento reservado*, reducir UAC* |
 
-\* Requieren ejecutar la app como administrador (los del candado 🔒).
-⚠ Reducen la seguridad: la app pide confirmación antes de activarlos.
+\* Requiere ejecutar la aplicación como administrador.
 
-> Algunos ajustes (marcados con ♻️ en la app) requieren **reiniciar el PC** para
-> aplicarse; el resto son inmediatos o solo necesitan **reiniciar el Explorador**
-> (botón 🔄 en la barra superior).
+Los ajustes que reducen la seguridad del sistema están marcados en la interfaz
+y piden confirmación antes de activarse. Algunos cambios requieren reiniciar
+el Explorador o el equipo para aplicarse por completo.
 
-## Cómo funciona
+## Funcionamiento
 
-- Los cambios **se aplican al instante** al mover el interruptor.
-- Cada interruptor refleja el **estado actual real** leído del Registro al abrir.
-- Para volver a un ajuste a su valor por defecto, simplemente **apágalo de nuevo**:
-  la app restaura el valor predeterminado de Windows (o borra la clave/valor).
-- Algunos cambios visuales (barra de tareas, Explorador) necesitan
-  **reiniciar el Explorador** — usa el botón "🔄 Reiniciar Explorador".
+Los cambios se aplican de inmediato al mover un interruptor, y cada uno
+refleja el estado real leído del Registro. Desactivar un ajuste lo devuelve a
+su valor predeterminado de Windows.
 
-## Idioma
+## Aviso
 
-REPTOSX está disponible en **español** (por defecto) e **inglés**. Puedes
-cambiarlo en cualquier momento desde el desplegable **IDIOMA**, en la parte
-inferior de la barra lateral.
-
-## ⚠️ Aviso
-
-Modifica el Registro de Windows. Todos los ajustes incluidos son reversibles
-desde la propia app, pero es buena idea crear un **punto de restauración** antes
-de hacer cambios masivos en la sección "Sistema".
+REPTOSX modifica el Registro de Windows. Todos los ajustes son reversibles
+desde la propia aplicación, pero se recomienda crear un punto de restauración
+antes de aplicar varios cambios a la vez, especialmente en la categoría
+Sistema.
