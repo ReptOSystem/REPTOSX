@@ -1,12 +1,12 @@
-# REPTOSX
+# REPTOSX 🛠️
 
-Herramienta de personalización y optimización para Windows 11. Permite activar
-o desactivar, desde una interfaz gráfica, los ajustes del Registro que
-normalmente se modifican a mano con `regedit`.
+Personalizador y optimizador todo-en-uno para Windows 11. Activa o desactiva,
+desde una interfaz gráfica, los ajustes del Registro que normalmente hay que
+tocar a mano con `regedit`.
 
 ![Windows](https://img.shields.io/badge/Windows-11-blue) ![UI](https://img.shields.io/badge/UI-CustomTkinter-2563eb)
 
-Creada por reptOSystem. Canal de personalización y optimización de Windows:
+Creada por reptOSystem · Canal de personalización y optimización de Windows:
 <https://www.youtube.com/@reptOSystem>
 
 ## Descarga
@@ -15,24 +15,24 @@ Creada por reptOSystem. Canal de personalización y optimización de Windows:
 2. Descarga `REPTOSX.exe` de la última versión.
 3. Ábrelo con doble clic.
 
-No hace falta instalar Python ni ninguna otra dependencia. Al abrirlo, Windows
-pedirá permiso de administrador (UAC), necesario para aplicar los ajustes
-marcados con el icono de candado. Si SmartScreen avisa de "editor
-desconocido", es el comportamiento normal para una aplicación nueva sin firma
-digital; puede continuarse desde "Más información → Ejecutar de todas formas".
+No hace falta instalar Python ni nada más. Al abrirlo, Windows pedirá permiso
+de administrador (UAC): es necesario para aplicar los ajustes marcados con el
+icono de candado 🔒. Si SmartScreen avisa de "editor desconocido", es normal
+en una app nueva sin firma digital — dale a "Más información → Ejecutar de
+todas formas".
 
 ## Presets
 
-La sección Presets permite aplicar varios ajustes a la vez con un clic:
+La sección Presets permite aplicar varios ajustes a la vez con un solo clic:
 
-- **Gaming**: prioridad de la aplicación en primer plano, aceleración de GPU
-  por hardware, ajustes de red para reducir latencia y desactivación de
-  telemetría y tareas de fondo.
-- **Privacidad máxima**: reduce telemetría, sugerencias, Windows Recall,
-  búsqueda web y el seguimiento de escritura al mínimo permitido.
-- **Escritorio minimalista**: modo oscuro completo y una interfaz más
-  despejada, sin widgets, sugerencias ni accesos innecesarios.
-- **Limpio y rápido**: elimina bloatware y sugerencias sin tocar la
+- **🎮 Gaming**: prioridad de la app en primer plano, aceleración de GPU por
+  hardware, red sin latencia extra y sin telemetría ni tareas de fondo
+  robando recursos.
+- **🔒 Privacidad máxima**: telemetría, sugerencias, Windows Recall, búsqueda
+  web y seguimiento de escritura reducidos al mínimo.
+- **🌙 Escritorio minimalista**: modo oscuro completo y una interfaz mucho
+  más despejada, sin widgets, sugerencias ni accesos innecesarios.
+- **🧹 Limpio y rápido**: fuera bloatware y sugerencias, sin tocar la
   privacidad en profundidad.
 
 Antes de aplicar un preset, o de restaurar una categoría entera, la aplicación
@@ -50,15 +50,14 @@ reinstalar Windows, o para compartir una configuración recomendada).
 
 La sección Mi equipo muestra el procesador, la memoria RAM en uso, la tarjeta
 gráfica con su VRAM, el espacio y tipo de los discos (SSD o HDD) y la versión
-de Windows instalada. Toda esta información se lee localmente; no se envía a
-ningún sitio.
+de Windows instalada. Todo se lee en local; nada se envía a ningún sitio.
 
 ## Otras funciones
 
-- Tres temas visuales: Oscuro, Claro y Cherry Blossom, con la interfaz
-  traducida al español e inglés desde el propio desplegable de idioma.
-- Ventana de tamaño proporcional a la pantalla, para verse correctamente
-  tanto en portátiles pequeños como en monitores grandes.
+- Tres temas visuales — Oscuro, Claro y 🌸 Cherry Blossom — con la interfaz
+  disponible en español e inglés desde el desplegable de idioma.
+- Ventana de tamaño proporcional a la pantalla, para verse bien tanto en
+  portátiles pequeños como en monitores grandes.
 - Creación de un punto de restauración del sistema con un clic.
 - Búsqueda de ajustes por nombre o descripción.
 
@@ -101,9 +100,8 @@ Los cambios se aplican de inmediato al mover un interruptor, y cada uno
 refleja el estado real leído del Registro. Desactivar un ajuste lo devuelve a
 su valor predeterminado de Windows.
 
-## Aviso
+## Aviso ⚠️
 
 REPTOSX modifica el Registro de Windows. Todos los ajustes son reversibles
-desde la propia aplicación, pero se recomienda crear un punto de restauración
-antes de aplicar varios cambios a la vez, especialmente en la categoría
-Sistema.
+desde la propia aplicación, pero es buena idea crear un punto de restauración
+antes de aplicar varios cambios a la vez, sobre todo en la categoría Sistema.
