@@ -47,6 +47,26 @@ def read_value(root: str, path: str, name: str):
         winreg.CloseKey(key)
 
 
+def enum_values(root: str, path: str):
+    """Lista [(nombre, valor, tipo), ...] de una clave; vacía si no existe."""
+    try:
+        key = winreg.OpenKey(ROOTS[root], path, 0, _READ)
+    except OSError:
+        return []
+    values = []
+    try:
+        i = 0
+        while True:
+            try:
+                values.append(winreg.EnumValue(key, i))
+            except OSError:
+                break
+            i += 1
+    finally:
+        winreg.CloseKey(key)
+    return values
+
+
 def key_exists(root: str, path: str) -> bool:
     """True si la clave del registro existe."""
     try:

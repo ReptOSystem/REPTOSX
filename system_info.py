@@ -34,18 +34,19 @@ def windows_version():
     build = read_value("HKLM", path, "CurrentBuildNumber") or ""
     ubr = read_value("HKLM", path, "UBR")
     build_full = f"{build}.{ubr}" if (build and ubr is not None) else str(build)
-    arch = "64 bits" if ctypes.sizeof(ctypes.c_void_p) == 8 else "32 bits"
+    bits = 64 if ctypes.sizeof(ctypes.c_void_p) == 8 else 32
     return {"product": str(product), "display_version": str(display),
-            "build": build_full, "arch": arch}
+            "build": build_full, "bits": bits}
 
 
 def cpu_info():
-    """Nombre del procesador (registro, instantáneo) y número de hilos."""
+    """Nombre del procesador (registro, instantáneo; None si no se pudo leer)
+    y número de hilos. Los textos de 'desconocido' los pone la interfaz, que
+    es quien conoce el idioma activo."""
     name = read_value(
         "HKLM", r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
         "ProcessorNameString")
-    name = (name or "Procesador desconocido").strip()
-    name = " ".join(name.split())   # colapsa espacios dobles frecuentes en este valor
+    name = " ".join(str(name).split()) if name else None   # colapsa espacios dobles
     return {"name": name, "threads": os.cpu_count() or 1}
 
 
@@ -94,7 +95,7 @@ def gpu_info():
             vram = read_value("HKLM", sub, "HardwareInformation.MemorySize")
         vram_gb = round(vram / (1024 ** 3), 1) if isinstance(vram, int) and vram > 0 else None
         gpus.append({"name": str(name).strip(), "vram_gb": vram_gb})
-    return gpus or [{"name": "No detectada", "vram_gb": None}]
+    return gpus
 
 
 def disks_info():
@@ -139,7 +140,12 @@ def disk_media_types():
         data = json.loads(out)
         if isinstance(data, dict):
             data = [data]
-        return [{"name": d.get("FriendlyName") or "Disco",
-                 "media": d.get("MediaType") or "Desconocido"} for d in data]
+        result = []
+        for d in data:
+            media = d.get("MediaType")
+            if media not in ("SSD", "HDD", "SCM"):
+                media = None            # "Unspecified" o vacío: lo traduce la interfaz
+            result.append({"name": d.get("FriendlyName") or None, "media": media})
+        return result
     except Exception:
         return []

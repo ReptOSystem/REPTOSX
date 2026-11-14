@@ -29,6 +29,23 @@ BIN = winreg.REG_BINARY
 
 GROUPS = ["personalization", "optimization"]
 
+
+def _windows_facts():
+    """Número de build y edición de este Windows, para avisar de los ajustes
+    que aquí no tendrían efecto (ver Tweak.compat)."""
+    path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    try:
+        build = int(read_value("HKLM", path, "CurrentBuildNumber") or 0)
+    except (TypeError, ValueError):
+        build = 0
+    return build, str(read_value("HKLM", path, "EditionID") or "")
+
+
+WIN_BUILD, WIN_EDITION = _windows_facts()
+BUILD_23H2 = 22631
+BUILD_24H2 = 26100
+_BUILD_NAMES = {BUILD_23H2: "Windows 11 23H2", BUILD_24H2: "Windows 11 24H2"}
+
 # Ejecuta un comando sin abrir ventana de consola
 _NOWINDOW = 0x08000000
 
@@ -118,6 +135,27 @@ def _nagle_set(turn_on):
         pass
 
 
+# --- Entradas del menú contextual ("Abrir ... aquí") ---
+def _context_entry(key_name, label_key, icon, command):
+    """Devuelve (is_on, apply) para una entrada propia del menú contextual.
+    El estado se decide por la existencia de la clave, no por su texto, para
+    que siga detectándose aunque se creara con la app en otro idioma."""
+    path = r"Software\Classes\Directory\Background\shell" + "\\" + key_name
+
+    def is_on():
+        return key_exists("HKCU", path + r"\command")
+
+    def apply(turn_on):
+        if not turn_on:
+            delete_key_tree("HKCU", path)
+            return
+        set_value("HKCU", path, "", SZ, i18n.tr(label_key))
+        set_value("HKCU", path, "Icon", SZ, icon)
+        set_value("HKCU", path + r"\command", "", SZ, command)
+
+    return is_on, apply
+
+
 def E(root, path, name, on, off, rtype=DWORD):
     """Crea la descripción de una entrada de registro."""
     return {"root": root, "path": path, "name": name,
@@ -127,7 +165,8 @@ def E(root, path, name, on, off, rtype=DWORD):
 class Tweak:
     def __init__(self, id, group, category, name, desc, entries,
                  admin=False, restart=None, cleanup_keys=None,
-                 is_on_fn=None, apply_fn=None, danger=False):
+                 is_on_fn=None, apply_fn=None, danger=False,
+                 min_build=None, max_build=None, enterprise_only=False):
         self.id = id
         self.group = group             # clave interna: "personalization" | "optimization"
         self.category = category       # clave interna: "appearance", "taskbar", etc.
@@ -142,6 +181,26 @@ class Tweak:
         # acciones a medida (ej. powercfg) que sustituyen la lógica de registro
         self.is_on_fn = is_on_fn
         self.apply_fn = apply_fn
+        # compatibilidad: build mínima/máxima de Windows en la que tiene efecto,
+        # y directivas que Windows solo respeta en Enterprise/Education
+        self.min_build = min_build
+        self.max_build = max_build
+        self.enterprise_only = enterprise_only
+
+    def compat(self):
+        """None si el ajuste tiene efecto en este Windows; si no, la clave de
+        i18n (y sus parámetros) que explica por qué. Es solo informativo: el
+        ajuste sigue pudiéndose aplicar, porque es inofensivo."""
+        if not WIN_BUILD:
+            return None     # no se pudo leer la versión: no se afirma nada
+        if self.min_build and WIN_BUILD < self.min_build:
+            return "compat.min_build", {"version": _BUILD_NAMES.get(self.min_build, self.min_build)}
+        if self.max_build and WIN_BUILD > self.max_build:
+            return "compat.deprecated", {}
+        if self.enterprise_only and not any(
+                word in WIN_EDITION for word in ("Enterprise", "Education", "Server")):
+            return "compat.edition", {}
+        return None
 
     @property
     def name(self) -> str:
@@ -189,6 +248,12 @@ class Tweak:
             else:
                 set_value(e["root"], e["path"], e["name"], e["type"], target)
 
+
+_CMD_HERE = _context_entry(
+    "REPTOSX_cmd", "context.cmd_label", "cmd.exe", r'cmd.exe /s /k pushd "%V"')
+_PWSH_HERE = _context_entry(
+    "REPTOSX_pwsh", "context.pwsh_label", "powershell.exe",
+    r"powershell.exe -noexit -command Set-Location -LiteralPath '%V'")
 
 # Rutas reutilizadas
 ADV = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
@@ -242,7 +307,7 @@ TWEAKS = [
     Tweak("never_combine", P, "taskbar", "Nunca combinar botones (mostrar etiquetas)",
           "Cada ventana abierta aparece como un botón independiente con su título, sin agruparse "
           "(modo 'No combinar nunca' de Windows 10). Necesita Windows 11 23H2 o superior.",
-          [E("HKCU", ADV, "TaskbarGlomLevel", 2, 0)], restart="explorer"),
+          [E("HKCU", ADV, "TaskbarGlomLevel", 2, 0)], restart="explorer", min_build=BUILD_23H2),
     Tweak("tray_show_all", P, "taskbar", "Mostrar todos los iconos de la bandeja",
           "Muestra siempre todos los iconos del área de notificación (junto al reloj), sin esconderlos "
           "en el menú de desbordamiento (la flechita).",
@@ -250,7 +315,7 @@ TWEAKS = [
     Tweak("end_task", P, "taskbar", "Añadir 'Finalizar tarea' al clic derecho",
           "Añade la opción 'Finalizar tarea' al menú del clic derecho sobre cualquier app de la barra "
           "de tareas, para cerrarla al instante. Necesita Windows 11 23H2 o superior.",
-          [E("HKCU", ADV, "TaskbarEndTask", 1, 0)], restart="explorer"),
+          [E("HKCU", ADV, "TaskbarEndTask", 1, 0)], restart="explorer", min_build=BUILD_23H2),
 
     # ----------------------------- Menú Inicio -----------------------------
     Tweak("disable_bing", P, "start_menu", "Desactivar la búsqueda web (Bing) en Inicio",
@@ -275,7 +340,7 @@ TWEAKS = [
     Tweak("disable_copilot", P, "start_menu", "Desactivar Windows Copilot",
           "Desactiva el asistente Windows Copilot mediante directiva: oculta su botón e impide que se abra.",
           [E("HKCU", r"Software\Policies\Microsoft\Windows\WindowsCopilot",
-             "TurnOffWindowsCopilot", 1, DELETE)]),
+             "TurnOffWindowsCopilot", 1, DELETE)], max_build=BUILD_23H2),
 
     # ------------------------------ Explorador -----------------------------
     Tweak("show_ext", P, "explorer", "Mostrar extensiones de archivo",
@@ -346,7 +411,7 @@ TWEAKS = [
           "Salta la pantalla de bloqueo (la imagen con el reloj) y va directo a la de inicio de sesión. "
           "Requiere administrador.",
           [E("HKLM", r"SOFTWARE\Policies\Microsoft\Windows\Personalization",
-             "NoLockScreen", 1, DELETE)], admin=True),
+             "NoLockScreen", 1, DELETE)], admin=True, enterprise_only=True),
     Tweak("logon_blur", P, "lock_screen", "Quitar el desenfoque del inicio de sesión",
           "Elimina el desenfoque (efecto acrylic) del fondo en la pantalla de inicio de sesión, "
           "mostrando la imagen nítida. Requiere administrador.",
@@ -458,7 +523,7 @@ TWEAKS = [
           [E("HKLM", r"SOFTWARE\Policies\Microsoft\Windows\WindowsAI",
              "DisableAIDataAnalysis", 1, DELETE),
            E("HKCU", r"Software\Policies\Microsoft\Windows\WindowsAI",
-             "DisableAIDataAnalysis", 1, DELETE)], admin=True),
+             "DisableAIDataAnalysis", 1, DELETE)], admin=True, min_build=BUILD_24H2),
     Tweak("disable_websearch", O, "privacy", "Quitar resultados web de la búsqueda",
           "Elimina los resultados de internet del cuadro de búsqueda de Windows; solo busca en tu "
           "equipo, sin enviar lo que escribes. Requiere administrador.",
@@ -549,27 +614,15 @@ TWEAKS = [
           "Quita el elemento 'Galería' (la vista de fotos recientes) de la columna izquierda del "
           "Explorador, si tu versión de Windows 11 lo incluye.",
           [E("HKCU", r"Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}",
-             "System.IsPinnedToNameSpaceTree", 0, 1)], restart="explorer"),
+             "System.IsPinnedToNameSpaceTree", 0, 1)], restart="explorer", min_build=BUILD_23H2),
     Tweak("context_cmd", P, "explorer", "Añadir 'Abrir símbolo del sistema aquí'",
           "Añade al menú del clic derecho (sobre el fondo de una carpeta) la opción para abrir el "
           "Símbolo del sistema directamente en esa ruta.",
-          [E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_cmd",
-             "", "Abrir símbolo del sistema aquí", DELETE, SZ),
-           E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_cmd",
-             "Icon", "cmd.exe", DELETE, SZ),
-           E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_cmd\command",
-             "", r'cmd.exe /s /k pushd "%V"', DELETE, SZ)],
-          cleanup_keys=[("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_cmd")]),
+          [], is_on_fn=_CMD_HERE[0], apply_fn=_CMD_HERE[1]),
     Tweak("context_pwsh", P, "explorer", "Añadir 'Abrir PowerShell aquí'",
           "Añade al menú del clic derecho (sobre el fondo de una carpeta) la opción para abrir "
           "PowerShell directamente situado en esa ruta.",
-          [E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_pwsh",
-             "", "Abrir PowerShell aquí", DELETE, SZ),
-           E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_pwsh",
-             "Icon", "powershell.exe", DELETE, SZ),
-           E("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_pwsh\command",
-             "", r"powershell.exe -noexit -command Set-Location -LiteralPath '%V'", DELETE, SZ)],
-          cleanup_keys=[("HKCU", r"Software\Classes\Directory\Background\shell\REPTOSX_pwsh")]),
+          [], is_on_fn=_PWSH_HERE[0], apply_fn=_PWSH_HERE[1]),
 
     # --- Personalización / Barra de tareas ---
     Tweak("widgets_policy", P, "taskbar", "Desactivar Widgets por completo",
@@ -622,12 +675,12 @@ TWEAKS = [
           [E("HKLM", r"SOFTWARE\Policies\Microsoft\Windows\CloudContent",
              "DisableWindowsConsumerFeatures", 1, DELETE),
            E("HKLM", r"SOFTWARE\Policies\Microsoft\Windows\CloudContent",
-             "DisableConsumerAccountStateContent", 1, DELETE)], admin=True),
+             "DisableConsumerAccountStateContent", 1, DELETE)], admin=True, enterprise_only=True),
     Tweak("disable_spotlight_features", O, "privacy", "Desactivar Windows Spotlight",
           "Desactiva por directiva todas las funciones de Windows Spotlight (fondos rotativos, datos "
           "curiosos y sugerencias en pantalla de bloqueo y escritorio). Requiere administrador.",
           [E("HKLM", r"SOFTWARE\Policies\Microsoft\Windows\CloudContent",
-             "DisableWindowsSpotlightFeatures", 1, DELETE)], admin=True),
+             "DisableWindowsSpotlightFeatures", 1, DELETE)], admin=True, enterprise_only=True),
 
     # --- Optimización / Red ---
     Tweak("network_throttling", O, "network", "Desactivar la limitación de red (multimedia)",

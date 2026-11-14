@@ -1,5 +1,7 @@
 # REPTOSX 🛠️
 
+**Español** · [English](README.en.md)
+
 Personalizador y optimizador todo-en-uno para Windows 11. Activa o desactiva,
 desde una interfaz gráfica, los ajustes del Registro que normalmente hay que
 tocar a mano con `regedit`.
@@ -40,11 +42,22 @@ muestra cuántos ajustes van a cambiar y avisa si alguno de ellos reduce la
 seguridad del sistema. Cada categoría tiene también un botón para restaurar
 únicamente sus ajustes a los valores predeterminados.
 
+También puedes guardar tu configuración actual como un **preset propio** con
+el nombre que quieras; aparecerá junto a los demás para aplicarlo de nuevo
+con un clic.
+
 ## Exportar e importar configuración
 
 Desde la sección Presets se puede exportar la configuración activa a un
 archivo `.json`, y volver a importarla más adelante (por ejemplo tras
 reinstalar Windows, o para compartir una configuración recomendada).
+
+## Inicio de Windows
+
+La sección Inicio de Windows lista los programas que se abren solos al
+iniciar sesión y permite activarlos o desactivarlos. Usa el mismo mecanismo
+que el Administrador de tareas, así que no se borra nada y el cambio es
+reversible. No incluye las apps de la Tienda ni las tareas programadas.
 
 ## Información del equipo
 
@@ -59,7 +72,11 @@ de Windows instalada. Todo se lee en local; nada se envía a ningún sitio.
 - Ventana de tamaño proporcional a la pantalla, para verse bien tanto en
   portátiles pequeños como en monitores grandes.
 - Creación de un punto de restauración del sistema con un clic.
-- Búsqueda de ajustes por nombre o descripción.
+- Aviso en cada ajuste que no tendría efecto en tu versión o edición de
+  Windows (por ejemplo, los que necesitan 23H2 o 24H2).
+- Aviso cuando hay una versión nueva de REPTOSX. Solo consulta el número de
+  versión en GitHub y se puede desactivar desde Acerca de.
+- Búsqueda de ajustes por nombre o descripción (Ctrl+F), sin importar tildes.
 
 ## Catálogo de ajustes
 

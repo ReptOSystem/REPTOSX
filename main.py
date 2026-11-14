@@ -14,9 +14,12 @@ Creada por reptOSystem  ·  https://www.youtube.com/@reptOSystem
 import ctypes
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
+import unicodedata
+import urllib.request
 import webbrowser
 from datetime import datetime
 from tkinter import filedialog
@@ -103,9 +106,13 @@ import i18n
 from registry_utils import is_admin
 from tweaks_data import TWEAKS, grouped, first_category, PRESETS, tweak_by_id
 import system_info as sysinfo
+import startup_apps
 
 PRESETS_VIEW = "__presets__"
 SYSINFO_VIEW = "__sysinfo__"
+STARTUP_VIEW = "__startup__"
+SPECIAL_VIEWS = (PRESETS_VIEW, SYSINFO_VIEW, STARTUP_VIEW)
+APP_VERSION = "1.1"
 
 
 def _compute_window_size(screen_w, screen_h):
@@ -147,6 +154,8 @@ CAT_ICON = {
 }
 ICO_PRESETS = _ico(0xE735)   # estrella
 ICO_SYSINFO = _ico(0xEC4E)   # PC de escritorio
+ICO_STARTUP = _ico(0xE768)   # reproducir (programas de inicio)
+ICO_USER = _ico(0xE77B)      # persona (preset propio)
 ICO_ABOUT = _ico(0xE946)     # info
 ICO_RESTORE = _ico(0xE777)   # restaurar (flecha de retorno)
 ICO_SEARCH = _ico(0xE721)    # lupa
@@ -169,11 +178,18 @@ def clean(text: str) -> str:
     return "".join(ch for ch in text if not 0xFE00 <= ord(ch) <= 0xFE0F)
 
 
+def _fold(text: str) -> str:
+    """Minúsculas y sin tildes/diacríticos, para que buscar 'telemetria' o
+    'anadir' encuentre 'telemetría' y 'añadir'."""
+    return "".join(c for c in unicodedata.normalize("NFD", text.lower())
+                   if unicodedata.category(c) != "Mn")
+
+
 def tweak_matches(tweak, query: str) -> bool:
-    q = query.lower()
-    return (q in tweak.name.lower()
-            or q in tweak.desc.lower()
-            or q in i18n.category_label(tweak.category).lower())
+    q = _fold(query)
+    return (q in _fold(tweak.name)
+            or q in _fold(tweak.desc)
+            or q in _fold(i18n.category_label(tweak.category)))
 
 # --- Temas: cada uno define una paleta completa y elegante. Clave interna
 # estable (no se traduce) -> etiqueta visible en THEME_LABELS. ---
@@ -221,6 +237,16 @@ def set_palette(pal):
 set_palette(THEMES["dark"])
 
 CHANNEL_URL = "https://www.youtube.com/@reptOSystem"
+RELEASES_URL = "https://github.com/ReptOSystem/REPTOSX/releases/latest"
+LATEST_API = "https://api.github.com/repos/ReptOSystem/REPTOSX/releases/latest"
+
+
+def _version_tuple(text: str):
+    """'v1.2.0' -> (1, 2); los ceros finales no cuentan (1.1 == 1.1.0)."""
+    nums = [int(n) for n in re.findall(r"\d+", text or "")]
+    while nums and nums[-1] == 0:
+        nums.pop()
+    return tuple(nums)
 
 
 class TweakCard(ctk.CTkFrame):
@@ -250,7 +276,17 @@ class TweakCard(ctk.CTkFrame):
             self, text=desc, anchor="w", justify="left",
             wraplength=540, text_color=TEXT_MUTED,
             font=ctk.CTkFont(size=12))
-        self.desc_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(2, 12))
+        compat = tweak.compat()
+        self.desc_lbl.grid(row=1, column=0, sticky="w", padx=16, pady=(2, 4 if compat else 12))
+        hover_widgets = [self, self.title_lbl, self.desc_lbl]
+        if compat:
+            # el ajuste no tendría efecto en este Windows: se avisa, pero se
+            # deja aplicar (es inofensivo y puede servir tras actualizar)
+            self.compat_lbl = ctk.CTkLabel(
+                self, text=i18n.tr(compat[0], **compat[1]), anchor="w", justify="left",
+                wraplength=540, text_color=AMBER, font=ctk.CTkFont(size=11, weight="bold"))
+            self.compat_lbl.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 12))
+            hover_widgets.append(self.compat_lbl)
 
         # badge de indicadores (admin / riesgo) con iconos vectoriales, alineado
         badge = []
@@ -262,22 +298,29 @@ class TweakCard(ctk.CTkFrame):
             color = AMBER if tweak.danger else (ACCENT if not self._admin_blocked else TEXT_MUTED)
             ctk.CTkLabel(self, text=" ".join(badge), text_color=color,
                          font=ctk.CTkFont(family=ICON_FONT, size=15)).grid(
-                             row=0, column=1, rowspan=2, padx=(0, 8))
+                             row=0, column=1, rowspan=3, padx=(0, 8))
 
         on_state = tweak.is_on() if initial_on is None else initial_on
         self.var = ctk.BooleanVar(value=on_state)
         self.switch = ctk.CTkSwitch(
             self, text="", variable=self.var, width=44,
             progress_color=ACCENT, command=self._on_toggle)
-        self.switch.grid(row=0, column=2, rowspan=2, padx=(8, 16), pady=12)
+        self.switch.grid(row=0, column=2, rowspan=3, padx=(8, 16), pady=12)
 
         if self._admin_blocked:
             self.switch.configure(state="disabled")
 
         # efecto hover suave (sin parpadeo al pasar por el interruptor)
-        for w in (self, self.title_lbl, self.desc_lbl):
+        for w in hover_widgets:
             w.bind("<Enter>", self._hover_on)
             w.bind("<Leave>", self._hover_off)
+            if self._admin_blocked:
+                # el interruptor está desactivado y no explica por qué:
+                # al pulsar la tarjeta se indica el motivo en la barra de estado
+                w.bind("<Button-1>", self._explain_locked)
+
+    def _explain_locked(self, _=None):
+        self.app.set_status(i18n.tr("status.admin_required"), error=True)
 
     def _hover_on(self, _=None):
         # si la categoría/tema cambió justo mientras el ratón estaba encima,
@@ -332,7 +375,14 @@ class TweakCard(ctk.CTkFrame):
             self.var.set(self.tweak.is_on())
             self.app.set_status(i18n.tr("status.apply_failed", name=self.tweak.name, error=exc), error=True)
             return
-        self.var.set(turn_on)
+        # se muestra el estado REAL leído tras aplicar, no el que se pidió: si
+        # Windows no aceptó el cambio (p.ej. powercfg falló), el interruptor
+        # no debe quedarse marcando algo que no es cierto
+        actual = self.tweak.is_on()
+        self.var.set(actual)
+        if actual != turn_on:
+            self.app.set_status(i18n.tr("status.not_applied", name=self.tweak.name), error=True)
+            return
         estado = i18n.tr("status.turned_on") if turn_on else i18n.tr("status.turned_off")
         if self.tweak.restart == "explorer":
             self.app.set_status(i18n.tr("status.tweak_toggled_explorer", name=self.tweak.name, state=estado))
@@ -352,7 +402,7 @@ class NavButton(ctk.CTkFrame):
     de modo que el texto de todas las entradas queda perfectamente alineado."""
 
     def __init__(self, master, icon, text, command, bold=False):
-        super().__init__(master, fg_color="transparent", corner_radius=8, height=40)
+        super().__init__(master, fg_color="transparent", corner_radius=8, height=36)
         self.command = command
         self.selected = False
         self.grid_propagate(False)
@@ -360,11 +410,11 @@ class NavButton(ctk.CTkFrame):
 
         self.icon = ctk.CTkLabel(self, text=icon, width=22, text_color=TEXT,
                                  font=ctk.CTkFont(family=ICON_FONT, size=16))
-        self.icon.grid(row=0, column=0, padx=(12, 10), pady=8)
+        self.icon.grid(row=0, column=0, padx=(10, 8), pady=5)
         self.lbl = ctk.CTkLabel(self, text=text, anchor="w", text_color=TEXT,
                                 font=ctk.CTkFont(size=13,
                                                  weight="bold" if bold else "normal"))
-        self.lbl.grid(row=0, column=1, sticky="ew", pady=8, padx=(0, 10))
+        self.lbl.grid(row=0, column=1, sticky="ew", pady=5, padx=(0, 2))
 
         for w in (self, self.icon, self.lbl):
             w.bind("<Button-1>", lambda e: self.command())
@@ -401,6 +451,11 @@ class App(ctk.CTk):
         self.current_cat = first_category()
         self.cards = []
         self._restoring = False
+        self._needs_restart = False     # hay cambios pendientes de reiniciar el Explorador
+        self._search_job = None         # temporizador de la búsqueda (debounce)
+        self._last_query = ""
+        self._ram_job = None            # refresco periódico de la RAM en "Mi equipo"
+        self._update_version = None     # versión más reciente publicada, si la hay
 
         # preferencias guardadas (tema, idioma, tamaño de ventana, aviso)
         self.cfg = load_config()
@@ -443,6 +498,11 @@ class App(ctk.CTk):
         self.show_category(self.current_cat)
         self._style_titlebar()
 
+        self.bind("<Control-f>", self._focus_search)
+        if self.cfg.get("check_updates", True):
+            self._check_updates()
+        self.bind("<Escape>", self._clear_search)
+
         # aviso de responsabilidad (salvo que el usuario eligiera no verlo más)
         if not self.cfg.get("skip_disclaimer"):
             self.withdraw()
@@ -470,7 +530,7 @@ class App(ctk.CTk):
 
     # ---------- construcción de la interfaz ----------
     def _build_sidebar(self):
-        sb = ctk.CTkFrame(self, width=242, corner_radius=0, fg_color=SIDEBAR_BG)
+        sb = ctk.CTkFrame(self, width=254, corner_radius=0, fg_color=SIDEBAR_BG)
         sb.grid(row=0, column=0, rowspan=4, sticky="nsew")
         sb.grid_propagate(False)
 
@@ -509,13 +569,18 @@ class App(ctk.CTk):
 
         sbtn = NavButton(nav, ICO_SYSINFO, i18n.tr("nav.my_pc"),
                          lambda: self.show_category(SYSINFO_VIEW), bold=True)
-        sbtn.pack(fill="x", padx=6, pady=(1, 6))
+        sbtn.pack(fill="x", padx=6, pady=1)
         self.cat_buttons[SYSINFO_VIEW] = sbtn
+
+        ubtn = NavButton(nav, ICO_STARTUP, i18n.tr("nav.startup"),
+                         lambda: self.show_category(STARTUP_VIEW), bold=True)
+        ubtn.pack(fill="x", padx=6, pady=(1, 6))
+        self.cat_buttons[STARTUP_VIEW] = ubtn
 
         for group, cats in grouped():
             ctk.CTkLabel(nav, text=i18n.group_label(group).upper(), anchor="w", text_color=TEXT_MUTED,
                          font=ctk.CTkFont(size=11, weight="bold")).pack(
-                             fill="x", padx=14, pady=(14, 4))
+                             fill="x", padx=14, pady=(10, 3))
             for cat in cats:
                 btn = NavButton(nav, CAT_ICON.get(cat, ""), i18n.category_label(cat),
                                 lambda c=cat: self.show_category(c))
@@ -527,7 +592,7 @@ class App(ctk.CTk):
                                            self.create_restore_point)
         self.restore_point_btn.pack(fill="x", pady=(0, 2))
         self.about_btn = NavButton(bottom, ICO_ABOUT, i18n.tr("nav.about"), self.show_about)
-        self.about_btn.pack(fill="x", pady=(0, 8))
+        self.about_btn.pack(fill="x", pady=(0, 6))
 
         ctk.CTkLabel(bottom, text=i18n.tr("sidebar.theme_label"), anchor="w", text_color=TEXT_MUTED,
                      font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=8)
@@ -537,16 +602,18 @@ class App(ctk.CTk):
             command=self._on_theme_selected, fg_color=SURFACE, button_color=ACCENT,
             button_hover_color=ACCENT_HOVER, text_color=TEXT)
         self.theme_menu.set(theme_labels[self.theme_name])
-        self.theme_menu.pack(fill="x", pady=(6, 10))
+        self.theme_menu.pack(fill="x", pady=(4, 8))
 
-        ctk.CTkLabel(bottom, text=i18n.tr("sidebar.lang_label"), anchor="w", text_color=TEXT_MUTED,
-                     font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w", padx=8)
-        self.lang_menu = ctk.CTkOptionMenu(
-            bottom, values=[i18n.LANG_NAMES[c] for c in i18n.LANGUAGES], height=34,
-            command=self._on_language_selected, fg_color=SURFACE, button_color=ACCENT,
-            button_hover_color=ACCENT_HOVER, text_color=TEXT)
+        # idioma: selector compacto de una sola fila (se explica solo), para
+        # que la lista de categorías siga cabiendo entera sin scroll
+        self.lang_menu = ctk.CTkSegmentedButton(
+            bottom, values=[i18n.LANG_NAMES[c] for c in i18n.LANGUAGES], height=30,
+            command=self._on_language_selected, fg_color=SURFACE,
+            selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
+            unselected_color=SURFACE, unselected_hover_color=SURFACE_HOVER,
+            text_color=TEXT, font=ctk.CTkFont(size=12))
         self.lang_menu.set(i18n.LANG_NAMES[i18n.get_lang()])
-        self.lang_menu.pack(fill="x", pady=(6, 0))
+        self.lang_menu.pack(fill="x")
 
     def _build_topbar(self):
         bar = ctk.CTkFrame(self, height=66, corner_radius=0, fg_color=BG)
@@ -559,13 +626,15 @@ class App(ctk.CTk):
             bar, placeholder_text=i18n.tr("topbar.search_placeholder"), height=40, corner_radius=10,
             fg_color=SURFACE, border_color=BORDER, border_width=1, text_color=TEXT)
         self.search.grid(row=0, column=0, sticky="ew", padx=(22, 10), pady=13)
-        self.search.bind("<KeyRelease>", lambda e: self._apply_search())
+        self.search.bind("<KeyRelease>", lambda e: self._schedule_search())
 
         self._restart_text = i18n.tr("topbar.restart_explorer")
         self.restart_btn = ctk.CTkButton(
             bar, text=self._restart_text, width=180, height=40, corner_radius=10,
             fg_color=ACCENT, hover_color=ACCENT_HOVER, command=self.restart_explorer)
         self.restart_btn.grid(row=0, column=1, padx=(0, 10), pady=13)
+        if self._needs_restart:
+            self.mark_needs_restart()   # conservar el aviso al cambiar de tema/idioma
 
         if not self.admin:
             self.admin_btn = ctk.CTkButton(
@@ -594,7 +663,8 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12))
         self.count_lbl.grid(row=0, column=2, sticky="e", padx=(8, 14))
 
-        self.only_active = ctk.BooleanVar(value=False)
+        if not hasattr(self, "only_active"):    # se conserva al cambiar de tema/idioma
+            self.only_active = ctk.BooleanVar(value=False)
         self.filter_switch = ctk.CTkSwitch(
             header, text=i18n.tr("content.filter_active_only"), variable=self.only_active,
             progress_color=ACCENT, command=self._render_cards,
@@ -621,6 +691,47 @@ class App(ctk.CTk):
             wrap, text=self._default_status(), anchor="w",
             text_color=TEXT_MUTED, font=ctk.CTkFont(size=12))
         self.status.pack(side="left", fill="x", expand=True, padx=4)
+        self._status_wrap = wrap
+        if self._update_version:
+            self._build_update_pill()   # se conserva al cambiar de tema/idioma
+
+    def _build_update_pill(self):
+        ctk.CTkButton(
+            self._status_wrap, text=i18n.tr("update.available", version=self._update_version),
+            height=22, corner_radius=11, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            text_color="white", font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.open_releases).pack(side="right", padx=8, pady=4, before=self.status)
+
+    def _check_updates(self):
+        """Consulta en segundo plano la última versión publicada en GitHub.
+        Solo se pide el número de versión: no se envía ningún dato del equipo.
+        Si no hay conexión o falla, simplemente no se avisa de nada."""
+        def worker():
+            try:
+                req = urllib.request.Request(LATEST_API, headers={
+                    "User-Agent": "REPTOSX", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    tag = str(json.load(resp).get("tag_name", ""))
+            except Exception:
+                return
+            if _version_tuple(tag) > _version_tuple(APP_VERSION):
+                try:
+                    self.after(0, lambda: self._show_update(tag.lstrip("vV")))
+                except Exception:
+                    pass    # la app se cerró mientras se consultaba
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_update(self, version):
+        self._update_version = version
+        try:
+            self._build_update_pill()
+        except Exception:
+            pass
+
+    def open_releases(self):
+        webbrowser.open(RELEASES_URL)
+        self.set_status(i18n.tr("update.opening"))
 
     # ---------- lógica ----------
     def _default_status(self):
@@ -656,7 +767,7 @@ class App(ctk.CTk):
 
     def refresh_counter(self):
         """Recalcula el contador de la categoría actual (tras un cambio)."""
-        if self.search.get().strip() or self.current_cat == PRESETS_VIEW:
+        if self.search.get().strip() or self.current_cat in SPECIAL_VIEWS:
             return
         source = [t for t in TWEAKS if t.category == self.current_cat]
         self._update_counter(source)
@@ -666,6 +777,14 @@ class App(ctk.CTk):
             w.destroy()
         self.cards = []
         query = self.search.get().strip()
+        self._last_query = query
+        self._cancel_ram_refresh()
+        try:
+            # volver arriba: si no, al pasar de una lista larga a una corta
+            # el área podía quedarse desplazada mostrando un hueco vacío
+            self.scroll._parent_canvas.yview_moveto(0)
+        except Exception:
+            pass
 
         # --- Vista de Presets ---
         if not query and self.current_cat == PRESETS_VIEW:
@@ -683,6 +802,15 @@ class App(ctk.CTk):
             self._set_controls(visible=False)
             self._update_counter(None)
             self._render_system_info()
+            return
+
+        # --- Vista de programas de inicio ---
+        if not query and self.current_cat == STARTUP_VIEW:
+            self.title_icon.configure(text=ICO_STARTUP)
+            self.cat_title.configure(text=i18n.tr("nav.startup"))
+            self._set_controls(visible=False)
+            self._update_counter(None)
+            self._render_startup()
             return
 
         row = 0
@@ -731,6 +859,49 @@ class App(ctk.CTk):
                 row=0, column=0, pady=34)
         self._update_counter(None if query else source, states=states)
 
+    @staticmethod
+    def _marked_name(tweak):
+        """Nombre del ajuste con las marcas de riesgo/administrador."""
+        name = tweak.name
+        if tweak.danger:
+            name = "⚠ " + name
+        if tweak.admin:
+            name = "🔒 " + name
+        return name
+
+    def _preset_card(self, row, icon, name, desc, count_text, names, on_apply, on_delete=None):
+        card = ctk.CTkFrame(self.scroll, corner_radius=12, fg_color=SURFACE,
+                            border_width=1, border_color=BORDER)
+        card.grid(row=row, column=0, sticky="ew", padx=4, pady=6)
+        card.grid_columnconfigure(0, weight=1)
+        hdr = ctk.CTkFrame(card, fg_color="transparent")
+        hdr.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
+        ctk.CTkLabel(hdr, text=icon, text_color=ACCENT,
+                     font=ctk.CTkFont(family=ICON_FONT, size=18)).pack(side="left", padx=(0, 11))
+        ctk.CTkLabel(hdr, text=name, anchor="w", text_color=TEXT,
+                     font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
+        ctk.CTkLabel(card, text=desc, anchor="w", justify="left",
+                     wraplength=560, text_color=TEXT_MUTED,
+                     font=ctk.CTkFont(size=12)).grid(row=1, column=0, sticky="w",
+                                                     padx=16, pady=(2, 10))
+        ctk.CTkLabel(card, text=count_text, anchor="w",
+                     text_color=ACCENT, font=ctk.CTkFont(size=11, weight="bold")).grid(
+                         row=2, column=0, sticky="w", padx=16, pady=(0, 2))
+        ctk.CTkLabel(card, text=clean("  ·  ".join(names)),
+                     anchor="w", justify="left", wraplength=560,
+                     text_color=TEXT_MUTED, font=ctk.CTkFont(size=11)).grid(
+                         row=3, column=0, sticky="w", padx=16, pady=(0, 14))
+        btns = ctk.CTkFrame(card, fg_color="transparent")
+        btns.grid(row=0, column=1, rowspan=4, padx=16, pady=12, sticky="n")
+        ctk.CTkButton(btns, text=i18n.tr("presets.apply_button"), width=110, height=36,
+                      corner_radius=9, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                      command=on_apply).pack()
+        if on_delete:
+            ctk.CTkButton(btns, text=i18n.tr("presets.delete_button"), width=110, height=30,
+                          corner_radius=9, fg_color="transparent", border_width=1,
+                          border_color=BORDER, text_color=TEXT_MUTED, hover_color=SURFACE_HOVER,
+                          command=on_delete).pack(pady=(8, 0))
+
     def _render_presets(self):
         ctk.CTkLabel(self.scroll, justify="left", anchor="w", wraplength=640,
                      text_color=TEXT_MUTED, font=ctk.CTkFont(size=12),
@@ -738,46 +909,31 @@ class App(ctk.CTk):
                          row=0, column=0, sticky="w", padx=10, pady=(0, 12))
         row = 1
         for preset in PRESETS:
-            card = ctk.CTkFrame(self.scroll, corner_radius=12, fg_color=SURFACE,
-                                border_width=1, border_color=BORDER)
-            card.grid(row=row, column=0, sticky="ew", padx=4, pady=6)
-            card.grid_columnconfigure(0, weight=1)
-            hdr = ctk.CTkFrame(card, fg_color="transparent")
-            hdr.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
-            ctk.CTkLabel(hdr, text=PRESET_ICON.get(preset["id"], ""), text_color=ACCENT,
-                         font=ctk.CTkFont(family=ICON_FONT, size=18)).pack(side="left", padx=(0, 11))
-            ctk.CTkLabel(hdr, text=i18n.preset_name(preset), anchor="w", text_color=TEXT,
-                         font=ctk.CTkFont(size=16, weight="bold")).pack(side="left")
-            ctk.CTkLabel(card, text=i18n.preset_desc(preset), anchor="w", justify="left",
-                         wraplength=560, text_color=TEXT_MUTED,
-                         font=ctk.CTkFont(size=12)).grid(row=1, column=0, sticky="w",
-                                                         padx=16, pady=(2, 10))
-            # lista de los ajustes que cambia el preset (con marcas 🔒 admin / ⚠ riesgo)
-            names = []
-            for tid in preset["set"]:
-                t = tweak_by_id(tid)
-                if not t:
-                    continue
-                nm = t.name
-                if t.danger:
-                    nm = "⚠ " + nm
-                if t.admin:
-                    nm = "🔒 " + nm
-                names.append(nm)
-            ctk.CTkLabel(card, text=i18n.tr("presets.changes_count", n=len(names)), anchor="w",
-                         text_color=ACCENT, font=ctk.CTkFont(size=11, weight="bold")).grid(
-                             row=2, column=0, sticky="w", padx=16, pady=(0, 2))
-            ctk.CTkLabel(card, text=clean("  ·  ".join(names)),
-                         anchor="w", justify="left", wraplength=560,
-                         text_color=TEXT_MUTED, font=ctk.CTkFont(size=11)).grid(
-                             row=3, column=0, sticky="w", padx=16, pady=(0, 14))
-            ctk.CTkButton(card, text=i18n.tr("presets.apply_button"), width=110, height=36, corner_radius=9,
-                          fg_color=ACCENT, hover_color=ACCENT_HOVER,
-                          command=lambda p=preset: self.apply_preset(p)).grid(
-                              row=0, column=1, rowspan=4, padx=16, pady=12, sticky="n")
+            names = [self._marked_name(t) for t in map(tweak_by_id, preset["set"]) if t]
+            self._preset_card(row, PRESET_ICON.get(preset["id"], ""), i18n.preset_name(preset),
+                              i18n.preset_desc(preset),
+                              i18n.tr("presets.changes_count", n=len(names)), names,
+                              lambda p=preset: self.apply_preset(p))
             row += 1
 
-        # tu configuración: exportar / importar / restaurar todo
+        # presets propios, guardados por el usuario
+        custom = self._custom_presets()
+        if custom:
+            ctk.CTkLabel(self.scroll, text=i18n.tr("presets.custom_label"), anchor="w",
+                         text_color=TEXT_MUTED, font=ctk.CTkFont(size=11, weight="bold")).grid(
+                             row=row, column=0, sticky="w", padx=8, pady=(14, 2))
+            row += 1
+            for cp in custom:
+                active = [tweak_by_id(tid) for tid, on in cp["set"].items() if on is True]
+                names = [self._marked_name(t) for t in active if t]
+                self._preset_card(row, ICO_USER, cp["name"],
+                                  i18n.tr("presets.custom_desc", date=cp.get("saved", "")),
+                                  i18n.tr("presets.custom_count", n=len(names)), names,
+                                  lambda c=cp: self.apply_custom_preset(c),
+                                  lambda c=cp: self.delete_custom_preset(c))
+                row += 1
+
+        # tu configuración: guardar como preset / exportar / importar / restaurar todo
         ctk.CTkFrame(self.scroll, height=1, fg_color=BORDER).grid(
             row=row, column=0, sticky="ew", padx=8, pady=16)
         row += 1
@@ -788,14 +944,13 @@ class App(ctk.CTk):
 
         profile_bar = ctk.CTkFrame(self.scroll, fg_color="transparent")
         profile_bar.grid(row=row, column=0, sticky="w", padx=4, pady=(0, 10))
-        ctk.CTkButton(profile_bar, text=i18n.tr("presets.export_button"),
-                      height=38, corner_radius=9, fg_color="transparent", border_width=1,
-                      border_color=BORDER, text_color=TEXT, hover_color=SURFACE_HOVER,
-                      command=self.export_profile).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(profile_bar, text=i18n.tr("presets.import_button"),
-                      height=38, corner_radius=9, fg_color="transparent", border_width=1,
-                      border_color=BORDER, text_color=TEXT, hover_color=SURFACE_HOVER,
-                      command=self.import_profile).pack(side="left")
+        for text, command in ((i18n.tr("presets.save_button"), self.save_custom_preset),
+                              (i18n.tr("presets.export_button"), self.export_profile),
+                              (i18n.tr("presets.import_button"), self.import_profile)):
+            ctk.CTkButton(profile_bar, text=text, height=38, corner_radius=9,
+                          fg_color="transparent", border_width=1, border_color=BORDER,
+                          text_color=TEXT, hover_color=SURFACE_HOVER,
+                          command=command).pack(side="left", padx=(0, 8))
         row += 1
 
         ctk.CTkButton(self.scroll, text=i18n.tr("presets.restore_all_button"),
@@ -803,6 +958,190 @@ class App(ctk.CTk):
                       border_color="#b91c1c", text_color="#ef4444",
                       hover_color=SURFACE_HOVER,
                       command=self._restore_all).grid(row=row, column=0, sticky="w", padx=4)
+
+    # ---------- presets propios ----------
+    def _custom_presets(self):
+        """Presets guardados por el usuario (descartando entradas mal formadas
+        si el archivo de configuración se editó a mano)."""
+        raw = self.cfg.get("custom_presets")
+        if not isinstance(raw, list):
+            return []
+        return [p for p in raw
+                if isinstance(p, dict) and isinstance(p.get("name"), str)
+                and p["name"].strip() and isinstance(p.get("set"), dict)]
+
+    def save_custom_preset(self):
+        self._ask_text(i18n.tr("preset_save.title"), i18n.tr("preset_save.message"),
+                       i18n.tr("preset_save.placeholder"), i18n.tr("preset_save.ok"),
+                       self._store_custom_preset)
+
+    def _store_custom_preset(self, name):
+        name = " ".join(name.split())[:40]
+        if not name:
+            return
+        preset = {"name": name, "saved": datetime.now().strftime("%Y-%m-%d"),
+                  "set": {t.id: t.is_on() for t in TWEAKS}}
+        # guardar con un nombre que ya existe lo sustituye
+        others = [p for p in self._custom_presets() if p["name"].lower() != name.lower()]
+        self.cfg["custom_presets"] = others + [preset]
+        save_config(self.cfg)
+        self._render_cards()
+        self.set_status(i18n.tr("preset_save.saved", name=name))
+
+    def apply_custom_preset(self, preset):
+        valid_ids = {t.id for t in TWEAKS}
+        items = [(tid, on) for tid, on in preset["set"].items()
+                 if tid in valid_ids and isinstance(on, bool)]
+        self._confirm_bulk_apply(
+            items, dialog_title=i18n.tr("confirm.apply_preset_title", name=preset["name"]),
+            status_title=preset["name"])
+
+    def delete_custom_preset(self, preset):
+        name = preset["name"]
+
+        def do_delete():
+            self.cfg["custom_presets"] = [p for p in self._custom_presets() if p["name"] != name]
+            save_config(self.cfg)
+            self._render_cards()
+            self.set_status(i18n.tr("preset_delete.done", name=name))
+
+        self._confirm(i18n.tr("preset_delete.title"),
+                      i18n.tr("preset_delete.message", name=name), do_delete,
+                      confirm_text=i18n.tr("presets.delete_button"))
+
+    def _ask_text(self, title, message, placeholder, ok_text, on_ok):
+        """Diálogo modal con un campo de texto (mismo estilo que _confirm)."""
+        existing = getattr(self, "_confirm_win", None)
+        if existing is not None and existing.winfo_exists():
+            existing.focus()
+            existing.lift()
+            return
+        win = ctk.CTkToplevel(self, fg_color=BG)
+        self._confirm_win = win
+        win.title(title)
+        win.resizable(False, False)
+        win.transient(self)
+        apply_icon(win)
+        ctk.CTkLabel(win, text=title, text_color=TEXT,
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(
+            anchor="w", padx=22, pady=(20, 4))
+        ctk.CTkLabel(win, text=message, justify="left", anchor="w", wraplength=414,
+                     text_color=TEXT_MUTED).pack(anchor="w", padx=22)
+        entry = ctk.CTkEntry(win, placeholder_text=placeholder, height=38, corner_radius=9,
+                             fg_color=SURFACE, border_color=BORDER, border_width=1,
+                             text_color=TEXT)
+        entry.pack(fill="x", padx=22, pady=(14, 0))
+
+        def _go(_=None):
+            text = entry.get().strip()
+            if not text:
+                entry.focus_set()
+                return
+            win.destroy()
+            on_ok(text)
+
+        entry.bind("<Return>", _go)
+        win.bind("<Escape>", lambda e: win.destroy())
+        btns = ctk.CTkFrame(win, fg_color="transparent")
+        btns.pack(side="bottom", fill="x", padx=22, pady=18)
+        ctk.CTkButton(btns, text=i18n.tr("confirm.cancel_button"), height=36, corner_radius=9,
+                      fg_color="transparent", border_width=1,
+                      border_color=BORDER, text_color=TEXT_MUTED,
+                      hover_color=SURFACE_HOVER,
+                      command=win.destroy).pack(side="right", padx=(8, 0))
+        ctk.CTkButton(btns, text=ok_text, height=36, corner_radius=9,
+                      fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                      command=_go).pack(side="right")
+        win.update_idletasks()
+        win.geometry(f"460x{max(230, min(win.winfo_reqheight(), 420))}")
+
+        def _ready():
+            try:
+                if win.winfo_exists():
+                    win.grab_set()
+                    entry.focus_set()
+            except Exception:
+                pass
+        win.after(150, _ready)
+
+    # ---------- programas de inicio ----------
+    def _render_startup(self):
+        try:
+            items = startup_apps.list_items()
+        except Exception:
+            items = []
+        ctk.CTkLabel(self.scroll, justify="left", anchor="w", wraplength=680,
+                     text_color=TEXT_MUTED, font=ctk.CTkFont(size=12),
+                     text=i18n.tr("startup.intro")).grid(
+                         row=0, column=0, sticky="w", padx=10, pady=(0, 8))
+        if not items:
+            ctk.CTkLabel(self.scroll, text=i18n.tr("startup.empty"),
+                         text_color=TEXT_MUTED).grid(row=1, column=0, pady=34)
+            return
+
+        count_lbl = ctk.CTkLabel(self.scroll, anchor="w", text_color=ACCENT,
+                                 font=ctk.CTkFont(size=11, weight="bold"))
+        count_lbl.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 6))
+
+        def update_count():
+            active = sum(1 for it in items if it["enabled"])
+            count_lbl.configure(text=i18n.tr("startup.count", active=active, total=len(items)).upper())
+
+        update_count()
+        sources = {"user": i18n.tr("startup.source_user"),
+                   "machine": i18n.tr("startup.source_machine"),
+                   "folder": i18n.tr("startup.source_folder")}
+
+        for row, item in enumerate(items, start=2):
+            blocked = item["admin"] and not self.admin
+            card = ctk.CTkFrame(self.scroll, corner_radius=12, fg_color=SURFACE,
+                                border_width=1, border_color=BORDER)
+            card.grid(row=row, column=0, sticky="ew", padx=4, pady=4)
+            card.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(card, text=item["name"], anchor="w", text_color=TEXT,
+                         font=ctk.CTkFont(size=14, weight="bold")).grid(
+                             row=0, column=0, sticky="w", padx=16, pady=(10, 0))
+            command = item["command"]
+            if len(command) > 150:
+                command = command[:147] + "..."
+            ctk.CTkLabel(card, text=command, anchor="w", justify="left", wraplength=540,
+                         text_color=TEXT_MUTED, font=ctk.CTkFont(size=11)).grid(
+                             row=1, column=0, sticky="w", padx=16, pady=(1, 0))
+            source = sources[item["source"]]
+            if item["source"] == "folder" and item["admin"]:
+                source += "  ·  " + sources["machine"]
+            ctk.CTkLabel(card, text=source, anchor="w", text_color=TEXT_MUTED,
+                         font=ctk.CTkFont(size=11, weight="bold")).grid(
+                             row=2, column=0, sticky="w", padx=16, pady=(2, 10))
+            if item["admin"]:
+                ctk.CTkLabel(card, text=ICO_LOCK if blocked else ICO_SHIELD,
+                             text_color=TEXT_MUTED if blocked else ACCENT,
+                             font=ctk.CTkFont(family=ICON_FONT, size=15)).grid(
+                                 row=0, column=1, rowspan=3, padx=(0, 8))
+            var = ctk.BooleanVar(value=item["enabled"])
+            switch = ctk.CTkSwitch(card, text="", variable=var, width=44, progress_color=ACCENT)
+            switch.grid(row=0, column=2, rowspan=3, padx=(8, 16), pady=12)
+            if blocked:
+                switch.configure(state="disabled")
+                card.bind("<Button-1>", lambda e: self.set_status(
+                    i18n.tr("status.admin_required"), error=True))
+                continue
+
+            def toggle(item=item, var=var):
+                try:
+                    startup_apps.set_enabled(item, var.get())
+                except Exception as exc:
+                    var.set(startup_apps.is_enabled(item))
+                    self.set_status(i18n.tr("startup.error", name=item["name"], error=exc), error=True)
+                    return
+                # se muestra el estado real releído, igual que en los ajustes
+                item["enabled"] = startup_apps.is_enabled(item)
+                var.set(item["enabled"])
+                update_count()
+                state = i18n.tr("status.turned_on" if item["enabled"] else "status.turned_off")
+                self.set_status(i18n.tr("startup.toggled", name=item["name"], state=state))
+
+            switch.configure(command=toggle)
 
     def _render_system_info(self):
         ctk.CTkLabel(self.scroll, justify="left", anchor="w", wraplength=680,
@@ -843,24 +1182,45 @@ class App(ctk.CTk):
             bar = ctk.CTkProgressBar(card, progress_color=ACCENT, fg_color=BORDER, height=10)
             bar.set(max(0.0, min(1.0, bar_fraction)))
             bar.grid(row=1, column=1, sticky="ew", padx=(6, 16), pady=(0, 6))
-            ctk.CTkLabel(card, text=footer_text, anchor="w",
-                         text_color=TEXT_MUTED, font=ctk.CTkFont(size=12)).grid(
-                             row=2, column=1, sticky="w", padx=(6, 16), pady=(0, 16))
+            footer = ctk.CTkLabel(card, text=footer_text, anchor="w",
+                                  text_color=TEXT_MUTED, font=ctk.CTkFont(size=12))
+            footer.grid(row=2, column=1, sticky="w", padx=(6, 16), pady=(0, 16))
             row += 1
+            return bar, footer
 
         # --- CPU ---
         cpu = sysinfo.cpu_info()
         simple_card(ICO_CPU, i18n.tr("sysinfo.cpu_title"),
-                   i18n.tr("sysinfo.cpu_threads", name=cpu["name"], threads=cpu["threads"]))
+                   i18n.tr("sysinfo.cpu_threads", threads=cpu["threads"],
+                           name=cpu["name"] or i18n.tr("sysinfo.cpu_unknown")))
 
         # --- RAM ---
+        def ram_text(r):
+            return i18n.tr("sysinfo.ram_usage", used=r["used_gb"], total=r["total_gb"],
+                           percent=r["percent"])
+
         ram = sysinfo.ram_info()
-        gauge_card(ICO_RAM, i18n.tr("sysinfo.ram_title"), ram["percent"] / 100,
-                  i18n.tr("sysinfo.ram_usage", used=ram["used_gb"], total=ram["total_gb"],
-                         percent=ram["percent"]))
+        ram_bar, ram_lbl = gauge_card(ICO_RAM, i18n.tr("sysinfo.ram_title"),
+                                      ram["percent"] / 100, ram_text(ram))
+
+        def refresh_ram():
+            # el uso de RAM se actualiza solo mientras esta página siga abierta
+            self._ram_job = None
+            try:
+                if not ram_bar.winfo_exists():
+                    return
+                r = sysinfo.ram_info()
+                ram_bar.set(max(0.0, min(1.0, r["percent"] / 100)))
+                ram_lbl.configure(text=ram_text(r))
+                self._ram_job = self.after(2000, refresh_ram)
+            except Exception:
+                pass
+
+        self._ram_job = self.after(2000, refresh_ram)
 
         # --- GPU(s) ---
-        for g in sysinfo.gpu_info():
+        gpus = sysinfo.gpu_info() or [{"name": i18n.tr("sysinfo.gpu_none"), "vram_gb": None}]
+        for g in gpus:
             vram_txt = i18n.tr("sysinfo.gpu_vram", vram=g["vram_gb"]) if g.get("vram_gb") else ""
             simple_card(ICO_GPU, i18n.tr("sysinfo.gpu_title"), f"{g['name']}{vram_txt}")
 
@@ -875,7 +1235,7 @@ class App(ctk.CTk):
         win_desc = win["product"]
         if win["display_version"]:
             win_desc += i18n.tr("sysinfo.os_version", version=win["display_version"])
-        win_desc += f"  ·  build {win['build']}  ·  {win['arch']}"
+        win_desc += f"  ·  build {win['build']}  ·  {i18n.tr('sysinfo.arch', bits=win['bits'])}"
         simple_card(ICO_SYSINFO, i18n.tr("sysinfo.os_title"), win_desc)
 
         # --- tipo de disco (SSD/HDD): tarda un par de segundos, se calcula
@@ -901,7 +1261,11 @@ class App(ctk.CTk):
                     if not media_lbl.winfo_exists():
                         return
                     if media:
-                        text = "  ·  ".join(f"{m['name']} ({m['media']})" for m in media)
+                        text = "  ·  ".join(
+                            "{} ({})".format(
+                                m["name"] or i18n.tr("sysinfo.disk_unknown_name"),
+                                m["media"] or i18n.tr("sysinfo.media_unknown"))
+                            for m in media)
                     else:
                         text = i18n.tr("sysinfo.disk_type_unavailable")
                     media_lbl.configure(text=text)
@@ -916,8 +1280,38 @@ class App(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _schedule_search(self):
+        """Espera a que se deje de teclear antes de redibujar los resultados
+        (redibujar todas las tarjetas en cada pulsación hacía la búsqueda lenta)."""
+        if self._search_job is not None:
+            try:
+                self.after_cancel(self._search_job)
+            except Exception:
+                pass
+        self._search_job = self.after(180, self._apply_search)
+
+    def _cancel_ram_refresh(self):
+        if self._ram_job is not None:
+            try:
+                self.after_cancel(self._ram_job)
+            except Exception:
+                pass
+            self._ram_job = None
+
     def _apply_search(self):
-        self._render_cards()
+        self._search_job = None
+        # teclas que no cambian el texto (flechas, Ctrl...) no redibujan nada
+        if self.search.get().strip() != self._last_query:
+            self._render_cards()
+
+    def _focus_search(self, _=None):
+        self.search.focus_set()
+        return "break"
+
+    def _clear_search(self, _=None):
+        if self.search.get():
+            self.search.delete(0, "end")
+            self._render_cards()
 
     # ---------- aviso de responsabilidad ----------
     def _show_disclaimer(self):
@@ -934,14 +1328,30 @@ class App(ctk.CTk):
         sw, sh = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
         x, y = (sw - 580) // 2, (sh - 540) // 2
         dlg.geometry(f"580x540+{x}+{y}")
-        dlg.after(150, dlg.grab_set)
+
+        def _grab():
+            # el diálogo puede haberse recreado ya (cambio de idioma)
+            try:
+                if dlg.winfo_exists():
+                    dlg.grab_set()
+            except Exception:
+                pass
+        dlg.after(150, _grab)
 
         head = ctk.CTkFrame(dlg, fg_color="transparent")
-        head.pack(anchor="w", padx=26, pady=(22, 2))
+        head.pack(fill="x", padx=26, pady=(22, 2))
         ctk.CTkLabel(head, text=ICO_WARN, text_color=AMBER,
                      font=ctk.CTkFont(family=ICON_FONT, size=24)).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(head, text=i18n.tr("disclaimer.header"), text_color=TEXT,
                      font=ctk.CTkFont(size=22, weight="bold")).pack(side="left")
+        # selector de idioma también aquí: es lo primero que ve quien abre la
+        # app por primera vez, antes de poder llegar al de la barra lateral
+        lang_menu = ctk.CTkOptionMenu(
+            head, values=[i18n.LANG_NAMES[c] for c in i18n.LANGUAGES], width=110, height=30,
+            command=self._on_disclaimer_language, fg_color=SURFACE, button_color=ACCENT,
+            button_hover_color=ACCENT_HOVER, text_color=TEXT)
+        lang_menu.set(i18n.LANG_NAMES[i18n.get_lang()])
+        lang_menu.pack(side="right")
         ctk.CTkLabel(dlg, text=i18n.tr("disclaimer.subtitle"),
                      text_color=TEXT_MUTED,
                      font=ctk.CTkFont(size=12)).pack(anchor="w", padx=26, pady=(0, 14))
@@ -968,6 +1378,17 @@ class App(ctk.CTk):
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
                       font=ctk.CTkFont(size=14, weight="bold"),
                       command=self._accept_disclaimer).pack(side="right")
+
+    def _on_disclaimer_language(self, label):
+        code = next((c for c in i18n.LANGUAGES if i18n.LANG_NAMES[c] == label), None)
+        if not code or code == i18n.get_lang():
+            return
+        self.apply_language(code)
+        try:
+            self._disclaimer.destroy()
+        except Exception:
+            pass
+        self._show_disclaimer()
 
     def _accept_disclaimer(self):
         if getattr(self, "_skip_var", None) is not None and self._skip_var.get():
@@ -1046,7 +1467,7 @@ class App(ctk.CTk):
                       confirm_text=i18n.tr("presets.apply_button"))
 
     def _apply_bulk(self, items, titulo):
-        applied = skipped = 0
+        applied = skipped = failed = 0
         need_explorer = need_pc = False
         for tid, state in items:
             t = tweak_by_id(tid)
@@ -1062,13 +1483,17 @@ class App(ctk.CTk):
                     need_explorer = True
                 elif t.restart == "pc":
                     need_pc = True
-            except Exception:
+            except PermissionError:
                 skipped += 1
+            except Exception:
+                failed += 1     # error real: no se cuenta como "falta administrador"
         if need_explorer:
             self.mark_needs_restart()
         msg = i18n.tr("bulk.applied", title=titulo, n=applied)
         if skipped:
             msg += i18n.tr("bulk.skipped_admin", n=skipped)
+        if failed:
+            msg += i18n.tr("bulk.failed", n=failed)
         if need_pc:
             msg += i18n.tr("bulk.restart_pc_needed")
         self.set_status(msg)
@@ -1080,7 +1505,7 @@ class App(ctk.CTk):
             parent=self, title=i18n.tr("export.dialog_title"),
             defaultextension=".json",
             filetypes=[(i18n.tr("export.file_type_label"), "*.json")],
-            initialfile="reptosx_perfil.json")
+            initialfile=i18n.tr("export.default_filename"))
         if not path:
             return
         data = {
@@ -1118,10 +1543,11 @@ class App(ctk.CTk):
         valid_ids = {t.id for t in TWEAKS}
         items, unknown = [], 0
         for tid, state in tweaks_field.items():
-            if tid not in valid_ids:
+            # solo se aceptan true/false reales: bool("false") sería True
+            if tid not in valid_ids or not isinstance(state, bool):
                 unknown += 1
                 continue
-            items.append((tid, bool(state)))
+            items.append((tid, state))
         if not items:
             self.set_status(i18n.tr("import.no_recognized"), error=True)
             return
@@ -1255,6 +1681,7 @@ class App(ctk.CTk):
                               text_color="#ef4444" if error else TEXT_MUTED)
 
     def mark_needs_restart(self):
+        self._needs_restart = True
         self.restart_btn.configure(fg_color="#16a34a", hover_color="#15803d",
                                    text=i18n.tr("topbar.restart_explorer_pending"))
 
@@ -1263,6 +1690,7 @@ class App(ctk.CTk):
             subprocess.run(["taskkill", "/f", "/im", "explorer.exe"],
                            capture_output=True)
             subprocess.Popen("explorer.exe")
+            self._needs_restart = False
             self.restart_btn.configure(fg_color=ACCENT, hover_color=ACCENT_HOVER,
                                        text=i18n.tr("topbar.restart_explorer"))
             self.set_status(i18n.tr("explorer.restarted_status"))
@@ -1365,9 +1793,20 @@ class App(ctk.CTk):
         ctk.CTkLabel(cont, text=CHANNEL_URL,
                      text_color=ACCENT, font=ctk.CTkFont(size=12)).pack(anchor="w")
 
-        ctk.CTkLabel(cont, text=clean(i18n.tr("about.version_footer")),
+        ctk.CTkLabel(cont, text=clean(i18n.tr("about.version_footer", version=APP_VERSION)),
                      text_color=TEXT_MUTED,
                      font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(18, 0))
+
+        updates_var = ctk.BooleanVar(value=bool(self.cfg.get("check_updates", True)))
+
+        def _save_updates_pref():
+            self.cfg["check_updates"] = bool(updates_var.get())
+            save_config(self.cfg)
+
+        ctk.CTkCheckBox(cont, text=i18n.tr("about.check_updates"), variable=updates_var,
+                        command=_save_updates_pref, checkbox_width=18, checkbox_height=18,
+                        fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=TEXT_MUTED,
+                        font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(10, 0))
 
     def relaunch_as_admin(self):
         try:
